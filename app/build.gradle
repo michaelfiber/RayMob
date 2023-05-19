@@ -1,0 +1,124 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace project.properties['app.application_id']
+    compileSdk 33
+
+    defaultConfig {
+        minSdkVersion 29
+        targetSdkVersion 32
+        versionCode Integer.parseInt(project.properties['app.version_code'])
+        versionName project.properties['app.version_name']
+
+        // Defining the application name label
+        resValue "string", "app_name", project.properties['app.name']
+
+        // Substitution variables for the manifest
+        manifestPlaceholders = [
+                'APP_LIB_NAME': project.properties['app.native_library_name'],
+                'ADMOB_APP_ID': project.properties['admob.app_id']
+        ]
+
+        // Updating the project with the info given in gradle.properties
+        applicationVariants.all { variant ->
+            variant.generateBuildConfigProvider.configure {
+                doLast {
+
+                    /* Configuring NativeLoader.java with data from gradle.properties */
+
+                    def javaFilePath = "src/main/java/com/bigfoot/raymob/NativeLoader.java"
+                    def javaFile = file(javaFilePath)
+                    def javaContent = javaFile.text
+
+                    def modifiedPackage = javaContent.replaceAll("package com.bigfoot.raymob;", "package " + project.properties['app.application_id'] + ";")
+                    def modifiedLibrary = modifiedPackage.replaceAll("System.loadLibrary\\(\"raymob\"\\);", "System.loadLibrary\\(\"" + project.properties['app.native_library_name'] + "\"\\);")
+
+                    javaFile.write(modifiedLibrary)
+
+                    /* Configuring admob.c with data from gradle.properties */
+
+                    def cFilePath = "src/main/cpp/game/admob.c"
+                    def cFile = file(cFilePath)
+                    def cContent = cFile.text
+
+                    def modifiedClassPath = cContent.replaceAll("com/bigfoot/raymob", project.properties['app.application_id'].replace(".", "/"))
+
+                    cFile.write(modifiedClassPath)
+                }
+            }
+
+            // Change output names to the correct ones
+            outputs.all {
+                outputFileName = outputFileName.replace("com.bigfoot.raymob", project.properties['app.application_id'])
+                outputFileName = outputFileName.replace("raymob", project.properties['app.native_library_name'])
+            }
+
+            // Restore the NativeLoader.java and admob.c file after compilation to avoid errors on the next compilation
+            assembleProvider.configure {
+                doLast {
+
+                    /* Restoring NativeLoader.java */
+
+                    def javaFilePath = "src/main/java/com/bigfoot/raymob/NativeLoader.java"
+                    def javaFile = file(javaFilePath)
+                    def javaContent = javaFile.text
+
+                    // Restore package name in NativeLoader.java
+                    def modifiedPackage = javaContent.replaceAll("package " + project.properties['app.application_id'] + ";", "package com.bigfoot.raymob;")
+
+                    // Restore the library name in NativeLoader.java
+                    def modifiedLibrary = modifiedPackage.replaceAll("System.loadLibrary\\(\"" + project.properties['app.native_library_name'] + "\"\\);", "System.loadLibrary\\(\"raymob\"\\);")
+
+                    javaFile.write(modifiedLibrary)
+
+                    /* Restoring admob.c */
+
+                    def cFilePath = "src/main/cpp/game/admob.c"
+                    def cFile = file(cFilePath)
+                    def cContent = cFile.text
+
+                    def modifiedClassPath = cContent.replaceAll(project.properties['app.application_id'].replace(".", "/"), "com/bigfoot/raymob")
+
+                    cFile.write(modifiedClassPath)
+                }
+            }
+        }
+
+        // Give CMake the name of the library and the package as an argument
+        // So that it also modifies the admob.c source file
+        externalNativeBuild {
+            cmake {
+                arguments "-DAPP_LIB_NAME=${project.properties['app.native_library_name']}"
+                arguments "-DAPP_ID=${project.properties['app.application_id']}"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.18.1'
+        }
+    }
+    buildFeatures {
+        viewBinding true
+    }
+    buildToolsVersion '30.0.3'
+    ndkVersion '21.3.6528147'
+}
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-ads:22.0.0'
+}
